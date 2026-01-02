@@ -120,7 +120,8 @@ public class BatchClient {
                 options
         );
         
-        WorkflowClient.start(workflow::run, config);
+        // Pass null for initial state (first run)
+        WorkflowClient.start(workflow::run, config, null);
         
         return workflowId;
     }

@@ -93,10 +93,11 @@ public interface BatchOrchestratorWorkflow {
      * Main workflow method that orchestrates the batch processing.
      * 
      * @param config batch configuration
+     * @param state optional state from continue-as-new (null for new batch)
      * @return final progress summary
      */
     @WorkflowMethod
-    BatchProgress run(BatchConfig config);
+    BatchProgress run(BatchConfig config, BatchOrchestratorState state);
     
     /**
      * Query the current progress of the batch.

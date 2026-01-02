@@ -191,7 +191,7 @@ public class BatchPageActivityImpl implements BatchPageActivity {
                         Optional.empty(),
                         Optional.empty()
                 );
-                orchestrator.signal("addPage", nextPage);
+                orchestrator.signal(BatchOrchestratorWorkflowImpl.SIGNAL_ADD_PAGE, nextPage);
                 
                 nextPageSignaled = true;
                 nextCursor = nextPage.getCursorStr();

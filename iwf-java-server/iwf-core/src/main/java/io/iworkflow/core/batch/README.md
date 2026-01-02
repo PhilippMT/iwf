@@ -220,7 +220,8 @@ double completionPct = progress.getCompletionPercentage();
 ### Custom Progress Tracker
 
 ```java
-@BatchTracker(name = "slackTracker")
+// Implement ProgressTracker interface
+@Component
 public class SlackProgressTracker implements ProgressTracker {
     
     @Override
@@ -229,6 +230,18 @@ public class SlackProgressTracker implements ProgressTracker {
             sendSlackMessage("#batch-jobs", 
                 "Batch " + progress.getBatchId() + " completed!");
         }
+    }
+}
+
+// Register in configuration
+@Configuration
+public class TrackerConfig {
+    @Bean
+    public CommandLineRunner registerTrackers(SlackProgressTracker tracker) {
+        return args -> {
+            // Register with name for use in BatchConfig
+            ProgressTrackerRegistry.register("slackTracker", tracker);
+        };
     }
 }
 
@@ -264,7 +277,8 @@ public void process(BatchProcessorContext context) {
     
     // ✅ Signal first - enables parallelism
     if (!items.isEmpty()) {
-        context.enqueueNextPage(BatchPage.of(items.getLast().getId(), pageSize));
+        String lastId = items.get(items.size() - 1).getId();
+        context.enqueueNextPage(BatchPage.of(lastId, pageSize));
     }
     
     // ✅ Then process

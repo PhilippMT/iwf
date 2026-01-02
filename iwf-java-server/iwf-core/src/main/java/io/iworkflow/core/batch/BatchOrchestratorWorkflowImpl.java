@@ -78,8 +78,11 @@ public class BatchOrchestratorWorkflowImpl implements BatchOrchestratorWorkflow 
     // Activity stub
     private BatchPageActivity pageActivity;
     
+    // Signal name constant
+    public static final String SIGNAL_ADD_PAGE = "addPage";
+    
     @Override
-    public BatchProgress run(BatchConfig config) {
+    public BatchProgress run(BatchConfig config, BatchOrchestratorState state) {
         this.config = config;
         this.maxParallelism = config.getMaxParallelism();
         this.startTime = Instant.ofEpochMilli(Workflow.currentTimeMillis());
@@ -90,15 +93,22 @@ public class BatchOrchestratorWorkflowImpl implements BatchOrchestratorWorkflow 
                 buildActivityOptions(config, false)
         );
         
-        logger.info("Starting batch {} with parallelism {}", config.getBatchId(), maxParallelism);
-        
-        // Start with first page
-        BatchPage firstPage = BatchPage.builder()
-                .cursorStr(config.getFirstCursor())
-                .size(config.getPageSize())
-                .pageNum(0)
-                .build();
-        enqueuePage(firstPage);
+        // Restore state from continue-as-new if present
+        if (state != null) {
+            restoreState(state);
+            logger.info("Resumed batch {} from continue-as-new with {} pending pages", 
+                    config.getBatchId(), pendingPages.size());
+        } else {
+            logger.info("Starting batch {} with parallelism {}", config.getBatchId(), maxParallelism);
+            
+            // Start with first page
+            BatchPage firstPage = BatchPage.builder()
+                    .cursorStr(config.getFirstCursor())
+                    .size(config.getPageSize())
+                    .pageNum(0)
+                    .build();
+            enqueuePage(firstPage);
+        }
         
         // Main processing loop
         runProcessingLoop();
@@ -161,7 +171,8 @@ public class BatchOrchestratorWorkflowImpl implements BatchOrchestratorWorkflow 
             return true;
         }
         if (config.getPagesPerRun() > 0 && pagesInThisRun.get() >= config.getPagesPerRun()) {
-            return !processingPages.isEmpty(); // Wait for in-flight pages
+            // Wait for in-flight pages to complete before continue-as-new
+            return processingPages.isEmpty();
         }
         return false;
     }
@@ -285,10 +296,57 @@ public class BatchOrchestratorWorkflowImpl implements BatchOrchestratorWorkflow 
         );
     }
     
+    private void restoreState(BatchOrchestratorState state) {
+        // Restore counters
+        pagesEnqueued.set(state.getPagesEnqueued());
+        pagesCompleted.set(state.getPagesCompleted());
+        itemsProcessed = state.getItemsProcessed();
+        maxParallelism = state.getMaxParallelism();
+        maxParallelismAchieved = state.getMaxParallelismAchieved();
+        startTime = state.getStartTime();
+        inExtendedRetryPhase = state.isInExtendedRetryPhase();
+        
+        // Restore page states
+        if (state.getPages() != null) {
+            for (Map.Entry<Integer, BatchOrchestratorState.PageStateData> entry : state.getPages().entrySet()) {
+                BatchOrchestratorState.PageStateData data = entry.getValue();
+                PageState pageState = new PageState(data.getPage());
+                if (data.isStuck()) pageState.markStuck();
+                if (data.isCompleted()) pageState.markCompleted();
+                if (data.isFailed()) pageState.markFailed(new RuntimeException(data.getFailureReason()));
+                pages.put(entry.getKey(), pageState);
+            }
+        }
+        
+        // Restore sets
+        if (state.getPendingPages() != null) {
+            pendingPages.addAll(state.getPendingPages());
+        }
+        if (state.getStuckPages() != null) {
+            stuckPages.addAll(state.getStuckPages());
+        }
+        if (state.getFailedPages() != null) {
+            failedPages.addAll(state.getFailedPages());
+        }
+    }
+    
     private void triggerContinueAsNew() {
+        // Convert page states to serializable form
+        Map<Integer, BatchOrchestratorState.PageStateData> pageDataMap = new HashMap<>();
+        for (Map.Entry<Integer, PageState> entry : pages.entrySet()) {
+            PageState ps = entry.getValue();
+            pageDataMap.put(entry.getKey(), BatchOrchestratorState.PageStateData.builder()
+                    .page(ps.getPage())
+                    .stuck(ps.isStuck())
+                    .completed(ps.isCompleted())
+                    .failed(ps.isFailed())
+                    .failureReason(ps.getFailureReason() != null ? ps.getFailureReason().getMessage() : null)
+                    .build());
+        }
+        
         // Save state and continue as new
         BatchOrchestratorState state = BatchOrchestratorState.builder()
-                .pages(pages)
+                .pages(pageDataMap)
                 .pendingPages(new ArrayList<>(pendingPages))
                 .stuckPages(new HashSet<>(stuckPages))
                 .failedPages(new HashSet<>(failedPages))
@@ -420,26 +478,5 @@ public class BatchOrchestratorWorkflowImpl implements BatchOrchestratorWorkflow 
         private int itemsProcessed;
         private String nextCursor;
         private boolean isLastPage;
-    }
-    
-    /**
-     * State for continue-as-new.
-     */
-    @lombok.Data
-    @lombok.Builder
-    @lombok.NoArgsConstructor
-    @lombok.AllArgsConstructor
-    public static class BatchOrchestratorState {
-        private Map<Integer, PageState> pages;
-        private List<Integer> pendingPages;
-        private Set<Integer> stuckPages;
-        private Set<Integer> failedPages;
-        private int pagesEnqueued;
-        private int pagesCompleted;
-        private long itemsProcessed;
-        private int maxParallelism;
-        private int maxParallelismAchieved;
-        private Instant startTime;
-        private boolean inExtendedRetryPhase;
     }
 }
