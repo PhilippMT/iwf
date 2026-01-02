@@ -1,0 +1,21 @@
+# Temporal Dynamic Configuration
+
+# Increase visibility query timeout
+frontend.visibilityMaxPageSize:
+  - value: 1000
+    constraints: {}
+
+# Enable advanced visibility
+system.advancedVisibilityWritingMode:
+  - value: "on"
+    constraints: {}
+
+# Increase workflow execution history limit
+limit.maxIDLength:
+  - value: 1000
+    constraints: {}
+
+# Increase search attribute value limit
+system.maxSearchAttributeSize:
+  - value: 16384
+    constraints: {}
