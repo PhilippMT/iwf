@@ -81,6 +81,34 @@ This by default will run Temporal server with it, again:
 ## Production
 Check the [wiki](https://github.com/indeedeng/iwf/wiki/iWF-Server-Operations#how-to-deploy).
 
+## Java Server Implementation (Experimental)
+
+A Java implementation of the iWF server is available in the `iwf-java-server` directory. This provides 100% API compatibility with the Go implementation while leveraging:
+
+* **Java 21** with Spring Boot 3.4
+* **Temporal Java SDK 1.32.x** with modern features:
+  * Worker Versioning for safe deployments
+  * Workflow Updates for synchronous RPC
+  * Automatic Poller Scaling
+* **S3 external storage** for large data objects
+
+To run the Java server:
+
+```shell
+cd iwf-java-server
+mvn clean package
+java -jar iwf-server/target/iwf-server-*.jar
+```
+
+Or using Docker:
+
+```shell
+docker build -f Dockerfile.java -t iwf-java-server:latest .
+docker-compose -f docker-compose-java.yaml up
+```
+
+See [iwf-java-server/README.md](./iwf-java-server/README.md) for detailed documentation.
+
 # Support
 
 Join our Slack channel! [![Slack Status](https://img.shields.io/badge/slack-join_chat-white.svg?logo=slack&style=social)](http://iworkflow-slack.work)
