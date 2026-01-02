@@ -3,3 +3,33 @@ test.log
 coverage.out
 .idea/
 .vscode
+
+# Java build artifacts
+iwf-java-server/**/target/
+iwf-java-server/**/*.class
+iwf-java-server/**/*.jar
+iwf-java-server/**/*.war
+iwf-java-server/**/*.ear
+iwf-java-server/**/dependency-reduced-pom.xml
+
+# Maven
+iwf-java-server/**/.mvn/
+iwf-java-server/**/mvnw
+iwf-java-server/**/mvnw.cmd
+
+# IDE
+*.iml
+*.ipr
+*.iws
+.idea/
+.settings/
+.classpath
+.project
+.factorypath
+
+# Logs
+*.log
+
+# Generated sources
+iwf-java-server/**/generated-sources/
+iwf-java-server/**/generated-test-sources/

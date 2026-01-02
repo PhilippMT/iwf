@@ -1,0 +1,99 @@
+# Docker Compose for iWF Java Server
+# This configuration runs the Java iWF server alongside Temporal
+
+version: '3.8'
+
+services:
+  # Temporal server (using Temporal's official development server)
+  temporal:
+    image: temporalio/auto-setup:1.24.2
+    container_name: temporal
+    ports:
+      - "7233:7233"
+    environment:
+      - DB=sqlite
+      - DYNAMIC_CONFIG_FILE_PATH=/etc/temporal/dynamic_config/dynamicconfig.yaml
+    volumes:
+      - ./config/temporal-dynamic-config.yaml:/etc/temporal/dynamic_config/dynamicconfig.yaml
+    healthcheck:
+      test: ["CMD", "tctl", "--address", "localhost:7233", "cluster", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # Temporal Web UI
+  temporal-ui:
+    image: temporalio/ui:2.26.2
+    container_name: temporal-ui
+    ports:
+      - "8080:8080"
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:3000
+    depends_on:
+      - temporal
+
+  # iWF Java Server
+  iwf-server-java:
+    build:
+      context: .
+      dockerfile: Dockerfile.java
+    container_name: iwf-server-java
+    ports:
+      - "8801:8801"
+      - "9090:9090"  # Prometheus metrics
+    environment:
+      - IWF_INTERPRETER_TEMPORAL_HOST_PORT=temporal:7233
+      - IWF_INTERPRETER_TEMPORAL_NAMESPACE=default
+      - IWF_API_PORT=8801
+      - JAVA_OPTS=-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC
+    depends_on:
+      temporal:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8801/info/healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Optional: MinIO for S3-compatible external storage
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    container_name: prometheus
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    depends_on:
+      - iwf-server-java
+
+volumes:
+  minio-data:
+
+networks:
+  default:
+    name: iwf-network
