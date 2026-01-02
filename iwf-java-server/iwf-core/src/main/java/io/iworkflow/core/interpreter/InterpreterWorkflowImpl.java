@@ -409,24 +409,55 @@ public class InterpreterWorkflowImpl implements InterpreterWorkflow {
 
     private void processSignalCommand(StateExecution stateExec, Map<String, Object> signalCmd) {
         String channelName = (String) signalCmd.get("signalChannelName");
-        // Signal handling would use Workflow.registerListener or similar
-        // This is a placeholder for the actual implementation
+        String commandId = (String) signalCmd.get("commandId");
+        Integer atLeast = (Integer) signalCmd.get("atLeast");
+        Integer atMost = (Integer) signalCmd.get("atMost");
+        
+        int minRequired = atLeast != null ? atLeast : 1;
+        int maxAllowed = atMost != null ? atMost : minRequired;
+        
+        // Create a signal channel using Temporal's workflow semantics
+        // In Temporal workflows, signals are received via @SignalMethod handlers
+        // Here we store the signal requirement and the command results will be
+        // populated when signals are received via the workflow's signal handler
+        
+        stateExec.getSignalRequirements().put(channelName, 
+                new SignalRequirement(commandId, channelName, minRequired, maxAllowed, new ArrayList<>()));
+        
+        // Wait for required signals to arrive
+        Workflow.await(() -> {
+            SignalRequirement req = stateExec.getSignalRequirements().get(channelName);
+            return req != null && req.getReceivedValues().size() >= req.getMinRequired();
+        });
     }
 
     private void processInternalChannelCommand(StateExecution stateExec, Map<String, Object> channelCmd) {
         String channelName = (String) channelCmd.get("channelName");
-        // Check if there are messages in the channel
+        
+        // Atomically check and get message from channel
+        Object message = null;
+        
+        // First check if message already available
         List<Object> messages = internalChannels.get(channelName);
         if (messages != null && !messages.isEmpty()) {
-            // Process immediately
-            messages.remove(0);
+            message = messages.remove(0);
         } else {
-            // Wait for message
+            // Wait for message to arrive, then retrieve it atomically
             Workflow.await(() -> {
                 List<Object> msgs = internalChannels.get(channelName);
                 return msgs != null && !msgs.isEmpty();
             });
-            internalChannels.get(channelName).remove(0);
+            
+            // Get the channel again after await and remove message
+            messages = internalChannels.get(channelName);
+            if (messages != null && !messages.isEmpty()) {
+                message = messages.remove(0);
+            }
+        }
+        
+        // Store the received message in command results
+        if (message != null) {
+            stateExec.getChannelResults().put(channelName, message);
         }
     }
 
@@ -543,7 +574,9 @@ public class InterpreterWorkflowImpl implements InterpreterWorkflow {
     }
 
     private boolean isWorkflowComplete() {
-        return pendingStateExecutions.isEmpty() && stateExecutionCounter.get() > 0;
+        // Workflow is complete when there are no pending state executions
+        // OR when no initial state was provided (empty workflow)
+        return pendingStateExecutions.isEmpty();
     }
 
     // Query Handlers
@@ -768,6 +801,10 @@ public class InterpreterWorkflowImpl implements InterpreterWorkflow {
         private Object stateInput;
         private Object stateOptions;
         private String waitForKey;
+        @lombok.Builder.Default
+        private Map<String, SignalRequirement> signalRequirements = new HashMap<>();
+        @lombok.Builder.Default
+        private Map<String, Object> channelResults = new HashMap<>();
     }
 
     @lombok.Data
@@ -777,6 +814,16 @@ public class InterpreterWorkflowImpl implements InterpreterWorkflow {
         private int commandIndex;
         private long firingUnixTimestampSeconds;
         private String status;
+    }
+
+    @lombok.Data
+    @lombok.AllArgsConstructor
+    private static class SignalRequirement {
+        private String commandId;
+        private String channelName;
+        private int minRequired;
+        private int maxAllowed;
+        private List<Object> receivedValues;
     }
 
     @lombok.Data

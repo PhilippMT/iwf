@@ -340,9 +340,69 @@ public class TemporalClientWrapper {
     }
 
     private Map<String, Object> callWorkerRpc(Map<String, Object> prepareResult, Map<String, Object> request) {
-        // This would make an HTTP call to the worker's RPC endpoint
-        // For now, return empty result
-        return Map.of("output", Map.of());
+        // Build worker RPC request
+        String workerUrl = (String) prepareResult.get("iwfWorkerUrl");
+        String workflowType = (String) prepareResult.get("iwfWorkflowType");
+        
+        if (workerUrl == null || workerUrl.isEmpty()) {
+            throw new IllegalStateException("Worker URL not available from prepare result");
+        }
+        
+        // Build the worker request
+        Map<String, Object> workerRequest = new HashMap<>();
+        
+        // Build context
+        Map<String, Object> context = new HashMap<>();
+        context.put("workflowId", request.get("workflowId"));
+        context.put("workflowRunId", request.get("workflowRunId"));
+        context.put("workflowStartedTimestamp", System.currentTimeMillis());
+        workerRequest.put("context", context);
+        
+        workerRequest.put("workflowType", workflowType);
+        workerRequest.put("rpcName", request.get("rpcName"));
+        workerRequest.put("input", request.get("input"));
+        workerRequest.put("searchAttributes", prepareResult.get("searchAttributes"));
+        workerRequest.put("dataAttributes", prepareResult.get("dataAttributes"));
+        workerRequest.put("signalChannelInfos", prepareResult.get("signalChannelInfos"));
+        workerRequest.put("internalChannelInfos", prepareResult.get("internalChannelInfos"));
+        
+        // Make HTTP call to worker
+        try {
+            String url = buildWorkerUrl(workerUrl, "/api/v1/workflowWorker/rpc");
+            return makeHttpRequest(url, workerRequest);
+        } catch (Exception e) {
+            log.error("Failed to call worker RPC API: {}", e.getMessage(), e);
+            throw new RuntimeException("Worker RPC call failed: " + e.getMessage(), e);
+        }
+    }
+    
+    private String buildWorkerUrl(String baseUrl, String path) {
+        return baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) + path : baseUrl + path;
+    }
+    
+    private Map<String, Object> makeHttpRequest(String url, Map<String, Object> request) {
+        // Use RestTemplate or WebClient to make HTTP call
+        // For simplicity, using RestTemplate here
+        org.springframework.web.client.RestTemplate restTemplate = new org.springframework.web.client.RestTemplate();
+        
+        org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+        headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+        
+        org.springframework.http.HttpEntity<Map<String, Object>> entity = 
+                new org.springframework.http.HttpEntity<>(request, headers);
+        
+        org.springframework.http.ResponseEntity<Map> response = restTemplate.exchange(
+                url,
+                org.springframework.http.HttpMethod.POST,
+                entity,
+                Map.class
+        );
+        
+        if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+            return new HashMap<>(response.getBody());
+        }
+        
+        throw new RuntimeException("Worker RPC returned error: " + response.getStatusCode());
     }
 
     private boolean hasMutations(Map<String, Object> workerResponse) {

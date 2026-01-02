@@ -33,6 +33,9 @@ FROM eclipse-temurin:21-jre
 LABEL maintainer="iWF Authors"
 LABEL description="iWF Java Server - Indeed Workflow Framework"
 
+# Install curl for health check
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
 # Create non-root user for security
 RUN groupadd -r iwf && useradd -r -g iwf iwf
 

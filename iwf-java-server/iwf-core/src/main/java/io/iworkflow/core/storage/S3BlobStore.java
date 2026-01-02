@@ -185,22 +185,52 @@ public class S3BlobStore implements BlobStore {
     }
 
     private String generateObjectKey(String workflowId) {
+        // Validate and sanitize workflow ID first
+        validateWorkflowId(workflowId);
         // Format: workflowId/timestamp-uuid
-        return workflowId + "/" + System.currentTimeMillis() + "-" + UUID.randomUUID();
+        return sanitizeForS3Key(workflowId) + "/" + System.currentTimeMillis() + "-" + UUID.randomUUID();
     }
 
     /**
      * Validate that a workflow ID is compatible with external storage.
+     * Checks for path traversal attacks and S3 key requirements.
      */
     public static void validateWorkflowId(String workflowId) {
         if (workflowId == null || workflowId.isEmpty()) {
             throw new IllegalArgumentException("Workflow ID cannot be null or empty");
         }
         
-        // Ensure no special characters that could cause issues with S3 paths
-        if (workflowId.contains("..") || workflowId.startsWith("/")) {
-            throw new IllegalArgumentException("Invalid workflow ID for external storage: " + workflowId);
+        // Check for path traversal attacks
+        if (workflowId.contains("..") || 
+            workflowId.contains("./") || 
+            workflowId.contains("/.") ||
+            workflowId.startsWith("/") ||
+            workflowId.startsWith("\\") ||
+            workflowId.contains("\\")) {
+            throw new IllegalArgumentException("Invalid workflow ID - potential path traversal: " + workflowId);
         }
+        
+        // Check S3 key length limit (1024 bytes)
+        if (workflowId.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 900) {
+            throw new IllegalArgumentException("Workflow ID too long for S3 storage: " + workflowId.length());
+        }
+        
+        // Check for null bytes which can cause issues
+        if (workflowId.contains("\0")) {
+            throw new IllegalArgumentException("Workflow ID contains invalid null byte");
+        }
+    }
+
+    /**
+     * Sanitize workflow ID for safe use as S3 key component.
+     */
+    private static String sanitizeForS3Key(String workflowId) {
+        // Replace any remaining problematic characters
+        return workflowId
+                .replace(' ', '_')
+                .replace('\t', '_')
+                .replace('\n', '_')
+                .replace('\r', '_');
     }
 
     @lombok.Data

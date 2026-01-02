@@ -139,9 +139,7 @@
                     <configuration>
                         <source>${java.version}</source>
                         <target>${java.version}</target>
-                        <compilerArgs>
-                            <arg>--enable-preview</arg>
-                        </compilerArgs>
+                        <!-- Preview features disabled for production stability -->
                     </configuration>
                 </plugin>
                 <plugin>
